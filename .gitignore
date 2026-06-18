@@ -1,0 +1,20 @@
+__pycache__
+*.pyc
+
+# Local virtual environments
+env
+venv
+.venv
+
+# Experiment outputs and trained checkpoints
+exp_out
+checkpoints
+wandb
+
+# Scratch / private working dirs
+scripts
+archive
+figures
+
+.ipynb_checkpoints
+.DS_Store

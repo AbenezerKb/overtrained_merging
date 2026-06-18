@@ -1,0 +1,19 @@
+overtrained_merging
+Copyright (c) 2026 Stefan Horoi, Guy Wolf, Eugene Belilovsky, Gintare Karolina Dziugaite
+
+This repository accompanies the paper "From Memorization to Parameter
+Interference: How Overtraining Experts Harms Model Merging" (ICML 2026).
+
+This software is derived from prior work and is distributed under the
+BSD 3-Clause License (see LICENSE.txt). It builds upon:
+
+- TIES-Merging (Yadav, Tam, Choshen, Raffel, Bansal; NeurIPS 2023)
+  https://github.com/prateeky2806/ties-merging
+  Paper: https://arxiv.org/abs/2306.01708
+
+- The T-Few / IA3 training and evaluation infrastructure
+  Copyright (c) 2022 Salesforce, Inc. — BSD 3-Clause License
+  https://github.com/r-three/t-few
+
+The original BSD 3-Clause License and copyright notice from these works are
+retained in LICENSE.txt, as required.
