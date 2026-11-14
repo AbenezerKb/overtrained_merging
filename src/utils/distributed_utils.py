@@ -34,6 +34,27 @@ def reduce_gatheredOutput(gathered_output, reduce_fn=None):
     return reduced_output
 
 
+def get_default_device():
+    """
+    Picks the best available single-process device (cuda > mps > cpu).
+    """
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def get_autocast_device_type(device):
+    """
+    Returns the device_type string to pass to torch.autocast for a device
+    (a torch.device, or an int CUDA rank).
+    """
+    if isinstance(device, torch.device):
+        return device.type
+    return "cuda"
+
+
 def is_nodeZero(device):
     """
 
@@ -44,9 +65,9 @@ def is_nodeZero(device):
     Returns:
 
     """
-    return device == 0 or device == torch.device(
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
+    if isinstance(device, torch.device) and device.type in ("mps", "cpu"):
+        return True
+    return device == 0 or device == get_default_device()
 
 
 def is_distributedSetup(world_size):

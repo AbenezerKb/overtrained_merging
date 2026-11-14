@@ -115,6 +115,10 @@ class TrainingConfig(Config):
         self.scheduler = None
         self.warmup_ratio = 0.05
         self.weight_decay = 0.0
+        # Coefficient of an L2 pull toward the *pretrained* weights:
+        # adds l2_to_pretrained * (theta - theta_pre) to each gradient, i.e.
+        # the gradient of 0.5 * coef * ||theta - theta_pre||^2. 0.0 = off.
+        self.l2_to_pretrained = 0.0
         self.norm_to_clip_gradient = None
 
         """

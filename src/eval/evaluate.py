@@ -12,6 +12,7 @@ from src.eval.Evaluator import Evaluator
 
 
 from src.utils.distributed_utils import (
+    get_autocast_device_type,
     reduce_gatheredOutput,
     is_nodeZero,
     is_distributedSetup,
@@ -84,7 +85,10 @@ def evaluate_model(
 
             if "Accuracy" in metrics:
                 if evaluation_config.use_bfloat16_during_eval:
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    with torch.autocast(
+                        device_type=get_autocast_device_type(device),
+                        dtype=torch.bfloat16,
+                    ):
                         (
                             predicted_choice,
                             score_ofChoices,
@@ -114,7 +118,10 @@ def evaluate_model(
 
             if "Squad" in metrics:
                 if evaluation_config.use_bfloat16_during_eval:
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    with torch.autocast(
+                        device_type=get_autocast_device_type(device),
+                        dtype=torch.bfloat16,
+                    ):
                         generated_ids, generated_txt = model.generate(
                             batch, evaluation_config.max_gen_len
                         )

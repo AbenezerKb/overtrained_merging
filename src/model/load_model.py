@@ -98,7 +98,7 @@ def load_stateDict(model_filepath):
     """
     if os.path.exists(model_filepath):
         logger.info(f"Using {model_filepath} model found")
-        return torch.load(model_filepath)
+        return torch.load(model_filepath, map_location="cpu", weights_only=False)
     else:
         assert "Filepath not found"
 
@@ -303,7 +303,7 @@ def load_model(model_config, cached_models, device):
                 pretrained_fp
             ), f"Pretrained checkpoint does not exist at {pretrained_fp}"
             logger.info(f"\tLoading/Using Pretrained checkpoint: {pretrained_fp}")
-            cached_models["pretrained_checkpoint"] = torch.load(pretrained_fp)
+            cached_models["pretrained_checkpoint"] = torch.load(pretrained_fp, map_location="cpu", weights_only=False)
 
     if model_config.checkpoint_to_directly_load_model is not None:
         checkpoint_path = generate_checkpointFilepath(
@@ -380,7 +380,7 @@ def get_Checkpoint_and_Vectors(
     pretrained_fp = os.path.join(pretrained_folder, "pretrained.pt")
     logger.info(f"\tLoading Pretrained checkpoint: {pretrained_fp}")
 
-    pretrained_checkpoint = torch.load(pretrained_fp)
+    pretrained_checkpoint = torch.load(pretrained_fp, map_location="cpu", weights_only=False)
 
     if merge_func == "ia3":
         return_vectors = loaded_checkpoints

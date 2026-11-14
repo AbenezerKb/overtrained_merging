@@ -691,9 +691,9 @@ def load_t5(merging_tasks, model_key, pretrained_state_dict, load_dir=None, load
         filepaths = [os.path.join(load_dir, f"{task}_s{load_seed}", f"checkpoints/checkpoint_{step}.pt") for task in merging_tasks]
 
     if lora == 'true':
-        ft_checks = [torch.load(fp, map_location="cpu") for fp in filepaths]
+        ft_checks = [torch.load(fp, map_location="cpu", weights_only=False) for fp in filepaths]
     else:
-        ft_checks = [torch.load(fp) for fp in filepaths]
+        ft_checks = [torch.load(fp, map_location="cpu", weights_only=False) for fp in filepaths]
     ptm_check = pretrained_state_dict
 
     # check if all checkpoints have the same paramters.
@@ -777,7 +777,7 @@ def load_bert(merging_tasks, model_key, pretrained_state_dict, load_dir=None, lo
     else:
         filepaths = [os.path.join(load_dir, f"{task}_s{load_seed}", f"checkpoints/checkpoint_{step}.pt") for task in merging_tasks]
 
-    ft_checks = [torch.load(fp) for fp in filepaths]
+    ft_checks = [torch.load(fp, map_location="cpu", weights_only=False) for fp in filepaths]
     ptm_check = pretrained_state_dict
 
     # Check if all checkpoints have the same parameters

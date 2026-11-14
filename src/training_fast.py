@@ -43,6 +43,8 @@ from src.utils.utils import (
     get_average,
 )
 from src.utils.distributed_utils import (
+    get_default_device,
+    get_autocast_device_type,
     reduce_gatheredOutput,
     is_nodeZero,
     is_distributedSetup,
@@ -348,7 +350,12 @@ def train(device, world_size, training_config):
             )
 
     if training_config.use_bfloat16_during_training:
-        scaler = torch.cuda.amp.GradScaler(enabled=True)
+        # bf16 does not need loss scaling; GradScaler is only for cuda + fp16
+        # (the autocast dtype here is always bf16, so it is a pass-through).
+        scaler = torch.amp.GradScaler(
+            get_autocast_device_type(device),
+            enabled=False,
+        )
 
     for i in tqdm(
         range(
@@ -366,7 +373,10 @@ def train(device, world_size, training_config):
         train_batch = next(train_iterator)
 
         if training_config.use_bfloat16_during_training:
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(
+                device_type=get_autocast_device_type(device),
+                dtype=torch.bfloat16,
+            ):
                 loss, current_metrics = model(train_batch)
                 loss = loss / training_config.gradient_accumulation_factor
             scaler.scale(loss).backward()
@@ -403,11 +413,10 @@ def train(device, world_size, training_config):
 
             # Take a gradient step
             if training_config.use_bfloat16_during_training:
-                if training_config.scheduler is None:
-                    scaler.step(optimizer)
-                else:
-                    scaler.step(scheduler)
+                scaler.step(optimizer)
                 scaler.update()
+                if training_config.scheduler is not None:
+                    scheduler.step()
             else:
                 optimizer.step()
                 if training_config.scheduler is not None:
@@ -478,5 +487,5 @@ if __name__ == "__main__":
             nprocs=training_config.world_size,
         )
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_default_device()
         train(device, None, training_config)

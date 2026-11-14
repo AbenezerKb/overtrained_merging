@@ -1,4 +1,4 @@
-# From Memorization to Parameter Interference: How Overtraining Experts Harms Model Merging
+# From Memorization to Parameter Interference: How Overtraining Experts Harms Model Merging (my experiment results at the bottom)
 
 Official code for the ICML 2026 paper
 **From Memorization to Parameter Interference: How Overtraining Experts Harms Model Merging**.
@@ -214,3 +214,94 @@ consider citing TIES-Merging (Yadav et al., 2023).
 ## License
 
 BSD 3-Clause License — see [`LICENSE.txt`](./LICENSE.txt).
+
+## Reduced-scale replication notes (unofficial, this fork only)
+
+These notes are **not** from the paper's authors. They are a small replication
+attempt run on a laptop (Apple M4 Pro, MPS) and a Kaggle T4 GPU.
+
+**Setup (differs from the paper):** T5-base, 4 tasks (paws, quartz, qasc,
+wiki_qa), batch size 32 with no gradient accumulation, 2048 steps
+at constant lr 1e-4 (AdamW), Task Arithmetic merge of all 4 experts. Validation
+accuracy, best lambda per row (chosen and scored on the same split, so
+optimistic). Lambda grid: 0.2 to 1.0 in steps of 0.2 for the local runs, 0.1 to
+1.0 in steps of 0.1 for the Kaggle runs.
+
+**Code changes in this fork:** runs on Apple MPS/CPU (device selection,
+autocast, GradScaler disabled, `torch.load` `map_location`, dataset-id mapping
+for recent `datasets`, a `scaler.step(scheduler)` fix), a new
+`l2_to_pretrained` training option (L2 pull toward the pretrained weights), and
+an `OVERTRAIN_CKPT_STEPS` environment variable to choose checkpoint steps.
+Checkpoint file `checkpoint_{n}.pt` is after n+1 optimizer steps.
+
+**Merged accuracy (best lambda; average over 4 tasks, then per task):**
+
+| Run | Step | Best lam | Avg | paws | quartz | qasc | wiki_qa |
+|---|---|---|---|---|---|---|---|
+| baseline (MPS) | 64 | 0.6 | 73.4 | 55.8 | 52.3 | 90.7 | 94.9 |
+| baseline (MPS) | 512 | 0.6 | 85.4 | 84.2 | 68.5 | 94.4 | 94.4 |
+| baseline (MPS) | 2048 | 0.6 | 85.3 | 78.2 | 75.8 | 95.4 | 91.7 |
+| AdamW weight decay 1.0 (MPS) | 64 | 0.6 | 73.7 | 55.8 | 52.3 | 91.6 | 94.9 |
+| AdamW weight decay 1.0 (MPS) | 512 | 0.4 | 81.5 | 73.3 | 65.6 | 91.9 | 95.1 |
+| AdamW weight decay 1.0 (MPS) | 2048 | 0.2 | 72.5 | 62.1 | 63.0 | 73.9 | 91.1 |
+| baseline (Kaggle T4) | 64 | 0.5 | 73.9 | 55.8 | 53.1 | 91.7 | 94.9 |
+| baseline (Kaggle T4) | 512 | 0.5 | 85.5 | 81.0 | 72.4 | 94.4 | 94.1 |
+| baseline (Kaggle T4) | 2048 | 0.6 | 86.2 | 84.4 | 73.2 | 94.2 | 92.9 |
+| L2 to pretrained, coef 0.01 (Kaggle T4) | 64 | 0.9 | 74.1 | 55.8 | 53.9 | 91.9 | 94.9 |
+| L2 to pretrained, coef 0.01 (Kaggle T4) | 512 | 0.8 | 82.3 | 69.9 | 72.9 | 94.1 | 92.1 |
+| L2 to pretrained, coef 0.01 (Kaggle T4) | 2048 | 0.8 | 82.2 | 74.5 | 69.8 | 89.9 | 94.5 |
+
+L2 pilot on paws only, step 2048 (expert validation accuracy / loss /
+task-vector norm): coef 0 = 94.2 / 0.086 / 44.4; 0.01 = 92.0 / 0.137 / 6.7;
+0.03 = 90.9 / 0.166 / 4.2; 0.1 = 89.5 / 0.205 / 2.4; 0.3 = 87.5 / 0.258 / 1.7.
+Only coefficient 0.01 got a full 4-task merge test.
+
+**Paper vs. this fork.** The paper's numbers are T5-base full fine-tuning,
+Task Arithmetic, averaged over 7 NLP tasks on the test split at batch 256
+(Table 2 of arXiv:2506.14126, mean±std as reported). Mine are the same model
+and method on 4 tasks, validation split, batch 32. Absolute accuracies are not
+comparable (my 4 tasks include easy ones such as qasc and wiki_qa), so the
+comparison is on quantities that are relative within each setup:
+
+| | Paper (baseline) | MPS baseline | MPS, weight decay 1.0 | Kaggle baseline | Kaggle, L2 to pretrained 0.01 |
+|---|---|---|---|---|---|
+| Experts, avg accuracy at 2048 steps | 82.0±0.5 | 93.3 | 92.4 | 92.6 | 91.5 |
+| Task Arithmetic merged at 512 steps | not printed (figure only) | 85.4 | 81.5 | 85.5 | 82.3 |
+| Task Arithmetic merged at 2048 steps | 70.1±0.7 | 85.3 | 72.5 | 86.2 | 82.2 |
+| Gap, experts minus merged, at 2048 steps | 11.9 | 8.0 | 19.9 | 6.4 | 9.3 |
+| Merged / experts at 2048 steps | 85.5% | 91.4% | 78.4% | 93.1% | 89.8% |
+| Best merged accuracy (step) | 73.7±0.2 (256) | 85.4 (512) | 81.5 (512) | 86.2 (2048) | 82.3 (512) |
+| Drop from best to 2048 steps | -3.6 | -0.1 | -9.0 | 0.0 | -0.1 |
+
+My checkpoints are at steps 64, 512 and 2048 (no 256-step checkpoint, which is
+where the paper's Task Arithmetic peaks), so "best" is over those three. My
+expert accuracies are the training-time validation scores (the MPS qasc score
+used 32 examples). The paper also reports 1024 steps (Task Arithmetic
+70.9±0.6) and early-stopping variants (Task Arithmetic 75.0±0.3 and 74.0±0.1);
+I have no equivalent runs.
+
+In the paper, merged accuracy falls 3.6 points from its best point to 2048
+steps and sits 11.9 points below the experts. In my two baseline runs the
+merged accuracy does not fall between 512 and 2048 steps and sits 6 to 8 points
+below the experts, so the paper's overtraining drop was not reproduced in this
+setup. Both regularized runs merged worse than their baselines at 512 and 2048
+steps: weight decay 1.0 loses 9.0 points from its best to 2048 steps and sits
+19.9 points below its experts, and L2 at 0.01 ends about 4 points below the
+Kaggle baseline.
+
+**What the evidence supports**
+
+- AdamW weight decay 1.0 (decay toward zero) left the experts almost unchanged
+  but hurt merging at steps 512 and 2048. A likely, unverified explanation is
+  that it adds a shrinkage term to every task vector that is shared across
+  tasks, which Task Arithmetic then adds once per task. The best lambda at
+  step 2048 (0.2) sat at the edge of the grid.
+- L2 toward the pretrained weights at 0.01 did not help (about 4 points lower
+  on average at step 2048). It shrinks task vectors by about 85% at some cost
+  in expert accuracy and moves the best lambda up. Smaller coefficients were
+  not tested.
+
+**Caveats:** the MPS and Kaggle baselines differ in hardware, lambda grid and eval subsets; qasc validation
+used only 32 examples in the MPS runs (default `num_val_samples`) and wiki_qa
+is 94.9% majority class, so only paws and quartz are informative probes; batch
+32 instead of the paper's effective 1024.

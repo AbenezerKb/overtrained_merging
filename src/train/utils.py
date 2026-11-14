@@ -115,7 +115,9 @@ def load_checkpointToResumeFrom(
     Returns:
 
     """
-    resumeCheckpoint_dict = torch.load(resume_checkpoint_filepath)
+    resumeCheckpoint_dict = torch.load(
+        resume_checkpoint_filepath, map_location="cpu", weights_only=False
+    )
 
     optimizer.load_state_dict(resumeCheckpoint_dict["optimizer"])
     if scheduler is not None:
@@ -127,7 +129,7 @@ def load_checkpointToResumeFrom(
         "checkpoints",
         f"checkpoint_{batchIdx_toResumeFrom}.pt",
     )
-    model.load_state_dict(torch.load(model_fp))
+    model.load_state_dict(torch.load(model_fp, map_location="cpu", weights_only=False))
 
     current_bestScore = resumeCheckpoint_dict["current_best_score"]
 

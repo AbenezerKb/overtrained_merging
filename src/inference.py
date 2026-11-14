@@ -34,7 +34,7 @@ from src.eval.scores import (
 from src.data.dataset_mixtures import get_datasetMixture
 from src.data.dataset_readers import get_datasetReader
 
-from src.utils.distributed_utils import is_nodeZero
+from src.utils.distributed_utils import is_nodeZero, get_default_device
 from src.utils.utils import (
     ParseKwargs,
     get_average,
@@ -286,7 +286,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_default_device()
 
     config_toInit = TrainingConfig(
         config_filepaths=[args.config_to_init], kwargs=args.kwargs, create_expDir=True

@@ -6,7 +6,24 @@ import datasets
 import json
 
 from promptsource.templates import DatasetTemplates, Template
-from datasets import load_dataset
+from datasets import load_dataset as _hf_load_dataset
+
+# Recent `datasets` releases no longer resolve legacy un-namespaced hub ids
+# (e.g. "paws"). Map the ones used here to their namespaced repos. Ids not in
+# the map are passed through unchanged (original behavior).
+_HF_ID_MAP = {
+    "paws": "google-research-datasets/paws",
+    "wiki_qa": "microsoft/wiki_qa",
+    "quartz": "allenai/quartz",
+    "qasc": "allenai/qasc",
+    "winogrande": "allenai/winogrande",
+    "super_glue": "aps/super_glue",
+}
+
+
+def load_dataset(path, *args, **kwargs):
+    return _hf_load_dataset(_HF_ID_MAP.get(path, path), *args, **kwargs)
+
 
 logger = logging.getLogger("root")
 # datasets.disable_progress_bar()

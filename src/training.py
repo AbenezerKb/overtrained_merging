@@ -43,6 +43,8 @@ from src.utils.utils import (
     get_average,
 )
 from src.utils.distributed_utils import (
+    get_default_device,
+    get_autocast_device_type,
     reduce_gatheredOutput,
     is_nodeZero,
     is_distributedSetup,
@@ -56,6 +58,17 @@ from src.data.PytorchDataset import PytorchDataset
 
 logger = logging.getLogger("root")
 
+
+
+# Steps at which to eval/checkpoint. Override with e.g.
+# OVERTRAIN_CKPT_STEPS=8,64,512,2048 to save disk.
+CHECKPOINT_STEPS = [
+    int(x)
+    for x in os.environ.get(
+        "OVERTRAIN_CKPT_STEPS",
+        "2,4,8,16,32,64,128,256,512,1024,2048",
+    ).split(",")
+]
 
 
 def evaluate_checkpoint(
@@ -294,7 +307,36 @@ def train(device, world_size, training_config):
             )
 
     if training_config.use_bfloat16_during_training:
-        scaler = torch.cuda.amp.GradScaler(enabled=True)
+        # bf16 does not need loss scaling; GradScaler is only for cuda + fp16
+        # (the autocast dtype here is always bf16, so it is a pass-through).
+        scaler = torch.amp.GradScaler(
+            get_autocast_device_type(device),
+            enabled=False,
+        )
+
+    l2_params, l2_anchor = [], []
+    assert training_config.l2_to_pretrained >= 0, "l2_to_pretrained must be >= 0"
+    if training_config.l2_to_pretrained > 0:
+        assert training_config.resume_checkpoint_filepath is None, (
+            "l2_to_pretrained anchors to the weights at the start of this "
+            "run; it cannot be combined with resume_checkpoint_filepath"
+        )
+        l2_params = [p for p in model.parameters() if p.requires_grad]
+        l2_anchor = [p.detach().clone() for p in l2_params]
+
+    def add_l2_gradient():
+        # grad of 0.5 * coef * ||theta - theta_pre||^2, scaled so that the
+        # total over one optimizer step (all micro-steps) is coef * delta.
+        # NOTE: added after backward, so it is only correct while the
+        # GradScaler is disabled (it always is: autocast dtype is bf16).
+        scale = (
+            training_config.l2_to_pretrained
+            / training_config.gradient_accumulation_factor
+        )
+        with torch.no_grad():
+            for p, p0 in zip(l2_params, l2_anchor):
+                if p.grad is not None:
+                    p.grad.add_(p - p0, alpha=scale)
 
     for i in tqdm(
         range(
@@ -312,7 +354,10 @@ def train(device, world_size, training_config):
         train_batch = next(train_iterator)
 
         if training_config.use_bfloat16_during_training:
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.autocast(
+                device_type=get_autocast_device_type(device),
+                dtype=torch.bfloat16,
+            ):
                 loss, current_metrics = model(train_batch)
                 loss = loss / training_config.gradient_accumulation_factor
             scaler.scale(loss).backward()
@@ -320,6 +365,9 @@ def train(device, world_size, training_config):
             loss, current_metrics = model(train_batch)
             loss = loss / training_config.gradient_accumulation_factor
             loss.backward()
+
+        if l2_params:
+            add_l2_gradient()
 
         if is_distributedSetup(training_config.world_size):
             gathered_currentMetrics = [{}] * training_config.world_size
@@ -349,11 +397,10 @@ def train(device, world_size, training_config):
 
             # Take a gradient step
             if training_config.use_bfloat16_during_training:
-                if training_config.scheduler is None:
-                    scaler.step(optimizer)
-                else:
-                    scaler.step(scheduler)
+                scaler.step(optimizer)
                 scaler.update()
+                if training_config.scheduler is not None:
+                    scheduler.step()
             else:
                 optimizer.step()
                 if training_config.scheduler is not None:
@@ -367,7 +414,7 @@ def train(device, world_size, training_config):
                 and (batch_idx + 1) % training_config.checkpoint_frequency == 0)
                 or
                 (not training_config.early_stopping
-                and (batch_idx + 1) in [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048])
+                and (batch_idx + 1) in CHECKPOINT_STEPS)
             ):
                 checkpoint_scores, cached_datasetReaders = evaluate_checkpoint(
                     model,
@@ -424,5 +471,5 @@ if __name__ == "__main__":
             nprocs=training_config.world_size,
         )
     else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_default_device()
         train(device, None, training_config)
